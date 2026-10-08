@@ -1,0 +1,56 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: 'Release-Typ: prerelease oder release'
+        required: true
+        type: choice
+        options:
+          - prerelease
+          - release
+        default: prerelease
+      version:
+        description: 'Version (leer lassen für Wert aus module.prop)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Read version from module.prop
+        id: module_version
+        run: |
+          if [ -z "${{ inputs.version }}" ]; then
+            VERSION=$(grep "^version=" module.prop | cut -f2 -d "=")
+          else
+            VERSION="${{ inputs.version }}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Resolved version: $VERSION"
+
+      - name: Create ZIP file
+        run: |
+          chmod +x create_zip.sh
+          ./create_zip.sh
+          ZIP_PATH="../$(grep "^id=" module.prop | cut -f2 -d "=")_$(grep "^version=" module.prop | cut -f2 -d "=").zip"
+          echo "ZIP_PATH=$ZIP_PATH" >> $GITHUB_OUTPUT
+        id: zip
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ steps.module_version.outputs.version }}
+          tag_name: v${{ steps.module_version.outputs.version }}
+          prerelease: ${{ inputs.release_type == 'prerelease' }}
+          files: ${{ steps.zip.outputs.ZIP_PATH }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
