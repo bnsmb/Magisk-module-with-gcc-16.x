@@ -1,4 +1,4 @@
-# Magisk-module-with-gcc-16.x
+# Magisk module with gcc 16.x toolchain
 
 This repository contains the source files for a [Magisk](https://github.com/topjohnwu/Magisk) Module with **gcc 16.x toolchain** and the sysroot from the **Android NDK r30** compiled for **arm64** CPUs
 
