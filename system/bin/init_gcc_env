@@ -1,0 +1,13 @@
+
+GCC_TOOLCHAIN_LINKS="/system/bin/gcc-toolchain"
+
+GCC_TOOLCHAIN="/system/lib/android-gcc-cross/bin/"
+
+[[ ":${PATH}:" !=  *:${GCC_TOOLCHAIN_LINKS}:* ]] && export PATH=/system/bin:$PATH:${GCC_TOOLCHAIN_LINKS}
+
+[[ ":${PATH}:" !=  *:${GCC_TOOLCHAIN}:* ]] && export PATH=/system/bin:$PATH:${GCC_TOOLCHAIN}
+
+
+[[ "$PS1" != *\[gcc\]* ]] && export PS1="[gcc] $PS1"   
+
+

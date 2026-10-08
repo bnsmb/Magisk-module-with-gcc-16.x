@@ -1,0 +1,2 @@
+LD_LIBRARY_PATH=/system/usr/lib  exec ${0%/*}/${0##*/}.bin ${1+"$@"}
+

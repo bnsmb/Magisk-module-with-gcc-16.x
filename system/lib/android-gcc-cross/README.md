@@ -1,0 +1,253 @@
+# android-gcc-cross
+
+This is a GCC compiler targeting Android. It can be used as a cross-compiler on Windows, Linux, and macOS to compile C/C++ programs for Android, and it can also be installed on Termux and used as a native compiler.
+
+The project originally started as an adaptation of the [TUR](https://github.com/termux-user-repository/tur/tree/master/tur/gcc-15) port of GCC, but most of the patches have since been rewritten from scratch, and the project is now maintained independently of TUR.
+
+## Installation
+
+### Termux
+
+<details>
+Although the toolchain is mainly intended for cross-compilation, you can also install it on Termux and use it as a native compiler:
+
+```bash
+curl \
+    --silent \
+    --show-error \
+    --fail \
+    --url 'https://cdn.jsdelivr.net/gh/AmanoTeam/android-gcc-cross@master/tools/termux-install.sh' \
+        | bash
+```
+
+This will download the GCC toolchain and install it to `/data/data/com.termux/files/usr/lib/android-gcc-cross`. After that, you can use the usual `gcc` and `g++` to compile code directly from Termux.
+</details>
+
+### Other platforms
+
+* [Windows](https://github.com/AmanoTeam/android-gcc-cross/releases/latest/download/x86_64-w64-mingw32.7z)
+* [macOS](https://github.com/AmanoTeam/android-gcc-cross/releases/latest/download/aarch64-apple-darwin.tar.xz)
+* [Linux](https://github.com/AmanoTeam/android-gcc-cross/releases/latest/download/x86_64-unknown-linux-gnu.tar.xz)
+
+## Usage
+
+### Gradle projects
+
+Replacing Clang is a bit tricky. Both CMake and ndk-build are heavily tied to the NDK’s internal structure, which makes it difficult to completely replace the compiler toolchain without risking breaking something in the build process.
+
+For this to work, you will need to have both our GCC toolchain and the upstream Clang toolchain installed.
+
+First, ensure that the NDK is already installed. If you are using ndk-build or CMake with Gradle and have built your project at least once on your machine, it is very likely that the NDK is already installed. If you're unsure, go to the root directory of your project and run `./gradlew clean`:
+
+```
+$ ./gradlew clean
+Starting a Gradle Daemon (subsequent builds will be faster)
+
+> Configure project :
+Checking the license for package NDK (Side by side) 25.1.8937393 in /home/runner/sdk/licenses
+License for package NDK (Side by side) 25.1.8937393 accepted.
+Preparing "Install NDK (Side by side) 25.1.8937393 v.25.1.8937393".
+"Install NDK (Side by side) 25.1.8937393 v.25.1.8937393" ready.
+Installing NDK (Side by side) 25.1.8937393 in /home/runner/sdk/ndk/25.1.8937393
+"Install NDK (Side by side) 25.1.8937393 v.25.1.8937393" complete.
+"Install NDK (Side by side) 25.1.8937393 v.25.1.8937393" finished.
+
+> Task :externalNativeBuildCleanDebug
+> Task :externalNativeBuildCleanRelease
+> Task :clean UP-TO-DATE
+
+BUILD SUCCESSFUL in 44s
+3 actionable tasks: 2 executed, 1 up-to-date
+```
+
+If you see messages like `Install NDK [...]` after running the above command, then Gradle just installed the NDK for you. If you don't see any messages like this, then either the NDK is already installed or the project you are trying to compile is not using the NDK at all.
+
+#### Patching the NDK
+
+The toolchain ships with a utility named `ndk-patch` that can be used to patch the NDK so that Gradle picks up GCC instead of Clang for cross-compilation. Running it will output something like this:
+
+```
+$ <android-gcc-cross>/bin/ndk-patch
+- Symlinking /home/runner/android-gcc-cross/bin/clang to /usr/local/lib/android/sdk/ndk/25.1.8937393/toolchains/llvm/prebuilt/linux-x86_64/bin/clang
+- Symlinking /home/runner/android-gcc-cross/bin/clang++ to /usr/local/lib/android/sdk/ndk/25.1.8937393/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++
+...
+```
+
+Essentially, it overrides the locally installed NDK’s `clang`/`clang++` commands with alternatives that invoke `gcc`/`g++` instead.
+
+#### Building the project
+
+After patching the NDK, you are almost ready to go and compile the project. Just run `./gradlew clean` before compiling it to make sure compiled objects from previous builds (Clang) don't interfere with the new build.
+
+> [!NOTE]
+> We aim to be a drop-in replacement, but having consistent behavior between the two compilers in all aspects is simply not realistic. Projects that don't rely on Clang-specific features or quirks (sometimes you do this without intending to) will likely compile without requiring any additional changes. In other cases, you might need to make changes to your build system (which is the most common case) or the code itself.
+
+### CMake
+
+The upstream NDK provides a single, unified CMake toolchain for cross-compilation, typically located at `<ndk-prefix>/build/cmake/android.toolchain.cmake`. In contrast, we provide a separate toolchain for each supported architecture/API level. These toolchains can be found in `<android-gcc-cross>/build/cmake`:
+
+```bash
+$ ls <android-gcc-cross>/build/cmake
+aarch64-unknown-linux-android.cmake
+aarch64-unknown-linux-android21.cmake
+aarch64-unknown-linux-android22.cmake
+...
+arm-unknown-linux-androideabi.cmake
+arm-unknown-linux-androideabi21.cmake
+arm-unknown-linux-androideabi22.cmake
+...
+i686-unknown-linux-android.cmake
+i686-unknown-linux-android21.cmake
+i686-unknown-linux-android22.cmake
+...
+riscv64-unknown-linux-android.cmake
+riscv64-unknown-linux-android35.cmake
+...
+x86_64-unknown-linux-android.cmake
+x86_64-unknown-linux-android21.cmake
+x86_64-unknown-linux-android22.cmake
+```
+
+So, instead of configuring your project like this...
+
+```
+$ cmake \
+    -DCMAKE_TOOLCHAIN_FILE='<ndk-prefix>/build/cmake/android.toolchain.cmake' \
+    -DANDROID_ABI='armeabi-v7a' \
+    -DANDROID_PLATFORM='android-24' \
+    ...
+```
+
+...prefer this instead:
+
+```
+$ cmake \
+    -DCMAKE_TOOLCHAIN_FILE='<android-gcc-cross>/build/cmake/arm-unknown-linux-androideabi24.cmake' \
+    ...
+```
+
+### Autotools
+
+For convenience, the toolchain also provides helper scripts that can be used to set up an environment suitable for cross-compiling projects based on Autotools and similar tools. These scripts can be found in `<android-gcc-cross>/build/autotools`:
+
+```bash
+$ ls <android-gcc-cross>/build/autotools
+aarch64-unknown-linux-android.sh
+aarch64-unknown-linux-android21.sh
+aarch64-unknown-linux-android22.sh
+...
+arm-unknown-linux-androideabi.sh
+arm-unknown-linux-androideabi21.sh
+arm-unknown-linux-androideabi22.sh
+...
+i686-unknown-linux-android.sh
+i686-unknown-linux-android21.sh
+i686-unknown-linux-android22.sh
+...
+riscv64-unknown-linux-android.sh
+riscv64-unknown-linux-android35.sh
+...
+x86_64-unknown-linux-android.sh
+x86_64-unknown-linux-android21.sh
+x86_64-unknown-linux-android22.sh
+```
+
+They are meant to be `source`d by you whenever you want to cross-compile a project:
+
+```bash
+# Set up the environment for cross-compilation
+$ source <android-gcc-cross>/build/autotools/aarch64-unknown-linux-android21.sh
+
+# Configure & build the project
+$ ./configure --host="${CROSS_COMPILE_TRIPLET}"
+$ make
+```
+
+Essentially, these scripts handle the setup of `CC`, `CXX`, `LD`, and other environment variables so you don’t need to configure them manually.
+
+## Changing some behaviors
+
+The toolchain allows you to change its behavior in certain scenarios through the use of environment variables. Below are all the switches it supports and their intended purposes:
+
+- `PINO_STATIC_RUNTIME`  
+  - Tells the cross-compiler to prefer linking with the static versions of the GCC runtime libraries rather than the dynamic ones. See [Static vs dynamic linking](#static-vs-dynamic-linking).
+
+- `PINO_ARM_MODE`  
+  - Tells the cross-compiler to generate code in ARM mode rather than Thumb-1/Thumb-2 mode.
+
+- `PINO_LTO`  
+  - Tells the cross-compiler to use LTO (Link-Time Optimization) during the build process. This flag accepts a string instead of a boolean, and the values for it can be `thin` or `full`.
+
+- `PINO_OPT_LEVEL`  
+  - Overrides any `-O` optimization flags passed on the command line. It accepts the same values as GCC's `-O` option, such as `2`, `3`, `fast`, and others.
+
+Most options, unless specified otherwise, take a boolean. You can enable a switch by setting its value to `true` (e.g., `export PINO_NZ=true`), and disable it by setting its value to `false` (e.g., `export PINO_NZ=false`).
+
+## Software availability
+
+The cross-compiler ships only with the minimum required to build a working C/C++ program. That is, you won't find any prebuilt binaries of popular projects like OpenSSL or zlib available for use, as you would on an average Linux distribution.
+
+If your project depends on something other than the Bionic C library (or the C++ standard libraries, for C++ programs), you need to either build it yourself or install it from somewhere else. For convenience, the toolchain includes an APT-like utility that installs packages from remote repositories into a local directory and makes them available for use during cross-compilation.
+
+Below is an example of building a CMake project that uses prebuilt dependencies installed through the package manager:
+
+1. Fetch the project sources (using curl as an example):
+
+    ```bash
+    git clone https://github.com/curl/curl
+    cd curl
+    ```
+
+2. Configure the environment for cross-compilation:
+
+    ```bash
+    source <android-gcc-cross>/build/autotools/aarch64-unknown-linux-android24.sh
+    ```
+
+3. Install the required dependencies:
+
+    ```bash
+    <android-gcc-cross>/bin/aarch64-unknown-linux-android24-apt install libnghttp2-static openssl-static zlib-static libpsl-static
+    ```
+
+4. Build curl as usual:
+
+    ```bash
+    cmake -S . -B build
+    cmake --build build
+    ```
+
+### Static vs dynamic linking
+
+The toolchain provides a flag switch with functionality similar to the NDK's [ANDROID_STL/APP_STL](https://developer.android.com/ndk/guides/cpp-support#selecting_a_c_runtime) flag. It allows you to choose between static and shared runtimes when linking C/C++ code:
+
+```nim
+PINO_STATIC_RUNTIME: bool = [true/false]
+```
+
+* Setting `PINO_STATIC_RUNTIME = true` is equivalent to setting `ANDROID_STL = c++_static` in the upstream NDK.
+* Setting `PINO_STATIC_RUNTIME = false` is equivalent to setting `ANDROID_STL = c++_shared` in the upstream NDK.
+
+By default, `PINO_STATIC_RUNTIME` assumes no specific behavior and will use whatever value was passed to `ANDROID_STL` in CMake/ndk-build.
+
+## Releases
+
+* [GCC 16](https://github.com/AmanoTeam/android-gcc-cross/releases/tag/gcc-16) - current stable release
+
+The current stable release is based on GCC 16 and supports cross-compiling software for all major Android architectures: `armv7`, `arm64`, `x86`, and `x86_64`. There is also experimental support for the `riscv64` architecture.
+
+<!--
+Additionally, it supports cross-compiling software for architectures whose support has been deprecated in the upstream NDK, including `armv5`, `mips`, and `mips64`.
+-->
+
+The toolchain includes support for the C and C++ frontends.
+
+The toolchain supports targeting Android versions from 4.0.1 (API level 14) up to Android 17 (API level 37).
+
+## License
+
+For detailed information, please refer to the [LICENSE](https://github.com/AmanoTeam/android-gcc-cross/blob/master/LICENSE.md) file.
+
+## Disclaimer
+
+Android is a registered trademark of Google LLC. This project is an independent open-source effort and is not affiliated with or endorsed by Google LLC.

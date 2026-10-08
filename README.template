@@ -1,0 +1,70 @@
+This is a template for a  Magisk module 
+
+
+History
+
+31.10.2024 v1.0.0 /bs
+  initial release
+
+30.11.2024 v1.1.0  /bs
+  added code to select a better name for the logfile for all scripts
+  added the template action.sh.template
+
+07.05.2025 v1.2.0 /bs
+  added some features to all script templates (see the history section of the scripts)
+
+15.05.2025 v1.2.1 /bs
+  the script customize.sh was missing in the version 1.2.0 of this module -- fixed
+
+07.07.2025 v1.2.2 /bs
+  the script customize.sh now sets the variable INSTALL_MODE to "update" if the module is already installed
+   
+29.07.2025 v1.2.3 /bs
+  rewrote the code to detect a module update in the script customize.sh
+
+10.08.2025 v1.3.0 /bs
+  added code for initial support for KernelSU in the script customize.sh
+
+11.08.2025 v1.4.0 /bs
+  added code to check the tool used for the installation (the magisk binary or the Magisk GUI) to the script customize.sh
+
+03.09.2025 v1.4.2 /bs
+  corrected the code to detect wether the module is installed in the Magisk GUI or with the magisk binary in the script customize.sh
+  removed unused debug code from the script customize.sh
+  fixed some typos in the script customize.sh
+
+04.09.2025 v1.4.3 /bs
+  add the module name to the example print message command in the various scripts
+
+11.09.2025 v1.4.4 /bs
+  fixed the code to check if this is a Module update
+
+24.09.2025 v1.4.5 /bs
+  added the missing definitions for __TRUE and __FALSE to the script templates action.sh.template, post-fs-data.sh.template and service.sh.template
+  added environment variables to the action, service, and post-fs-data scripts to signal the running script to other scripts
+  added the function ReadVolumeKeys to the script customize.sh and to the template action.sh.template
+
+30.03.2026 v1.4..6
+  corrected the action.sh.template script
+
+03.04.2026 v1.4.7 /bs
+  corrected the action.sh.template script 
+  removed the action.sh script
+
+
+04.04.2026 v1.4.8 /bs
+  added a trap handler for house keeping in the template for the script service.sh
+  added a trap handler for house keeping in the template for the script action.sh
+
+31.05.2026 v1.4.9 /bs
+  added a watchdog to the template for the post-fs-data.sh template
+
+29.08.2026 v1.5.0 /bs
+  added the script start_stop_nrpe.sh  - an example for a action script with a menu
+  updated the template scripts
+
+05.10.2026 v1.5.1 /bs
+  rewrote the template for the action.sh script -- the template now contains code to implement an interactive menu
+
+06.10.2026 v1.5.2 /bs
+ 

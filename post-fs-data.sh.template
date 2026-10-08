@@ -1,0 +1,117 @@
+# 
+#
+# Magisk init script post-fs-data.sh for the Magisk Module
+# 
+# History
+#   31.10.2024 /bs
+#     initial release
+#   30.11.2024 /bs
+#     added code to select a better name for the logfile
+#   06.05.2025 /bs
+#     added the variables MODULE_VERSION and MODULE_DESC
+#     "set -x" is now only executed if the files /data/local/tmp/debug and /data/local/tmp/trace exist
+#   22.09.2025 /bs
+#     added the missing definitions for __TRUE and __FALSE
+#     added the environment variable IN_POSTFSDATA_SCRIPT
+#   24.01.2026 /bs
+#     the script now prints the process ID and the PPID to the log file if logging to a file is enabled
+#   31.05.2026 /bs
+#     added a watchdog (optional; set the variable MAX_TIME to enable the watchdog)
+#  29.08.2026 /bs
+#     STDERR from the grep command to read the file module.prop is now redirected to /dev/null
+#
+#     
+#     
+# WARNING: using setprop in the post-fs-data.sh script will deadlock the boot process! Please use resetprop -n <prop_name> <prop_value> instead.
+# 
+# Note: Do NOT use typeset in this script!
+#
+
+# -----------------------------------------------------------------------------
+# define some constants
+#
+__TRUE=0
+__FALSE=1
+
+export IN_POSTFSDATA_SCRIPT=${__TRUE}
+
+
+# -----------------------------------------------------------------------------
+#
+# the environment variable MODPATH is only defined by Magisk for the script customize.sh
+#
+[ "${MODPATH}"x = ""x ] && MODPATH="${0%/*}"
+
+MODULE_NAME="$( grep "^id=" ${MODPATH}/module.prop 2>/dev/null | cut -f2 -d "=" )"
+[ "${MODULE_NAME}"x = ""x ] && MODULE_NAME="unknown_magisk_module"
+
+MODULE_VERSION="$( grep "^version=" ${MODPATH}/module.prop 2>/dev/null | cut -f2 -d "=" )"
+
+MODULE_DESC="${MODULE_NAME} ${MODULE_VERSION}"
+
+# customize.sh is sourced in
+# #
+[ "$0"x = "sh"x ] && SCRIPT_NAME="customize.sh" || SCRIPT_NAME="${0##*/}"
+
+# set this variable to a value greater then 0 to start the watchdog; the value is the 
+# maximum seconds that this script should run
+# 
+MAX_TIME=0
+
+# ----------------------------------------------------------------------------
+#
+# LogDebugMsg - print a Message if DEBUG_MODE is ${__TRUE}
+# 
+# Usage: LogDebugMsg [message]
+#
+function LogDebugMsg {
+  if [ ${DEBUG_MODE} = ${__TRUE} ] ; then
+    echo "$*"
+  fi
+}
+
+# -----------------------------------------------------------------------------
+# change either "0 = 1" to "0 = 0" in this script or create the file /data/local/tmp/debug to enable the debug output to the log file
+#
+if [ 0 = 1 -o -r /data/local/tmp/debug ] ; then
+  LOGFILE="/data/local/tmp/${MODULE_NAME}_${SCRIPT_NAME}.log"
+
+#  echo "Writing all messages to the log file ${LOGFILE}"
+
+  exec 1>"${LOGFILE}" 2>&1
+
+  echo "The PID of this process is $$; the PPID is $PPID"
+  
+  if [ -r /data/local/tmp/trace ] ; then
+    set -x
+    TRACE_MODE=${__TRUE}
+  else
+    TRACE_MODE=${__FALSE}    
+  fi
+
+  DEBUG_MODE=${__TRUE}   
+else
+  DEBUG_MODE=${__FALSE}       
+  TRACE_MODE=${__FALSE}
+fi
+
+# -----------------------------------------------------------------------------
+
+echo "This is the script \"$0\" for the module \"${MODULE_NAME}\" "
+
+
+# -----------------------------------------------------------------------------
+# start the watchdog if requested
+#
+if [ ${MAX_TIME}x = ""x ] ; then
+  if [ ${MAX_TIME} -gt 0 ] ; then
+#
+# watchdog: kill ourselves after 60s (safer for slow entry-level devices)
+#
+    (sleep ${MAX_TIME} && kill -9 $$ 2>/dev/null) &
+    WATCHDOG_PID=$!
+  fi
+fi
+
+## -----------------------------------------------------------------------------
+

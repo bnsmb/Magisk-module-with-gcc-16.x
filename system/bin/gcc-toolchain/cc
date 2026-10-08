@@ -1,0 +1,14 @@
+#!/system_ext/bin/bash
+
+API=${API:=31}
+
+[  ${VERBOSE}x != ""x ] && set -x
+
+export PINO_RUNTIME_RPATH='true'
+
+export PINO_SYSTEM_PREFIX="$(dirname "${PREFIX}")"
+export PINO_SYSTEM_LIBRARIES='true'
+
+export LD_LIBRARY_PATH="/system/lib/android-gcc-cross/lib:${LD_LIBRARY_PATH}"
+
+exec /system/lib/android-gcc-cross/bin/aarch64-unknown-linux-android${API}-gcc "${@}"

@@ -1,0 +1,702 @@
+#!/system/bin/sh
+#
+# *** This is only a template for an action.sh script for a Magisk module ***
+# *** To use it, replace all code marked with "???" with your own code ***
+# *** copy it to the root directory of your Magiks module and rename it to 
+# *** action.sh ***
+#
+# Sample action script for a Magisk Module
+#
+# The script can be used as normal script in a shell and as an action.sh 
+# script in a Magisk module
+#
+# If used as action.sh script, the script shows a menu and the user
+# can use the VolumeUp, VolumeDown, and Power key to select and execute
+# a menu entry.
+#
+#
+# If the script is used in a shell, the syntax for the script is:
+#
+#h# 
+#h# This is a sample for an action.sh script for a Magisk module
+#h#
+#h# action.sh.template [help] [status] [start] [disable] [switch] [status] [var=value]
+#h# 
+#h# Parameter:
+#h# 
+#h#   help       - print the usage help and exit_program
+#h#   start      - start the demo
+#h#   stop       - stop the demo
+#h#   switch     - switch the status of the demo
+#h#   status     - print the status of the demo
+#h#   var=value  - set the variable "var" to the value "value"
+#h#                this parameter can be used multiple times
+#h#
+#
+# Notes:
+#
+# All lines starting with "#h#" in the 1st column in this script are 
+# printed if the script is executed with the parameter "help" or without 
+# any parameter.
+#
+# The shebang in line one is only used if the script is executed in a shell. 
+# action.sh scripts are always executed by the Magisk busybox sh, this is:
+#    "/data/adb/magisk/busybox sh"
+#
+# If executed as action.sh script, only messages written to STDOUT are 
+# displayed in the Magisk output window; messages written to STDERR are 
+# not printed at all.
+#
+#
+# History
+#  30.08.2026 /bs
+#     initial release
+#
+
+# -----------------------------------------------------------------------------
+# define some constants
+#
+__TRUE=0
+__FALSE=1
+
+# for debugging:
+#
+#   uncomment the next line to write STDERR Messages to the terminal 
+#   window used for the output of action.sh
+#
+# exec 2>&1
+
+# check wether we're running as action.sh script
+#
+if [ "${ACTION_SCRIPT_RUNNING}"x = ""x ]  ;then
+  readlink /proc/$$/exe | grep -E "/libbusybox.so$|/data/adb/magisk/busybox" >/dev/null
+  if [ $? -eq 0 ] ; then
+#
+# the script is running as action.sh script using the busybox sh from Magisk
+# the busybox sh from Magisk does not support arrays 
+#   -> restart the script using /system/bin/sh
+#
+    export ACTION_SCRIPT_RUNNING=${__TRUE}
+    exec /system/bin/sh $0 "$@" 2>&1
+#
+# this code should never be executed ("exec" will never return)
+#    
+    echo
+    echo "Fatal ERROR: "
+    echo "Can not execute '/system/bin/sh \"$@\"' "
+    echo "The working dir is:"
+    pwd
+    echo
+    exit 254
+  else
+    export ACTION_SCRIPT_RUNNING=${__FALSE}
+  fi
+fi
+
+# constants for the physical keys of the phone
+#
+NO_KEY_PRESSED=0
+VOLUME_UP_PRESSED=1
+VOLUME_DOWN_PRESSED=2
+POWER_PRESSED=3
+
+
+# global script variables # ???
+#
+
+# sample status variable
+#
+DEMO_RUNNING=${__FALSE}
+
+# sample semaphor file to store the current status
+#
+SEMAPHOR_FILE="/data/local/tmp/action_test"
+
+# the notification messages for toasts
+#
+NOTIFICATION_MSG=""
+
+# -----------------------------------------------------------------------------
+# MODPATH must contain the directory with the Magisk module
+#
+
+MODPATH="${0%/*}"
+
+if [ ! -r ${MODPATH}/module.prop ] ; then
+#
+# correct the MODPATH variable if the script is executed in a shell # ???
+  :
+# sample code:  
+#  MODPATH="/data/adb/modules/nrpe"
+#
+fi
+
+if [ -r ${MODPATH}/module.prop ] ; then
+  MODULE_NAME="$( grep "^id=" ${MODPATH}/module.prop | cut -f2 -d "=" )"
+  [ "${MODULE_NAME}"x = ""x ] && MODULE_NAME="unknown_magisk_module"
+
+  MODULE_VERSION="$( grep "^version=" ${MODPATH}/module.prop | cut -f2 -d "=" )"
+
+  MODULE_DESC="${MODULE_NAME} ${MODULE_VERSION}"
+else
+  MODULE_NAME="magisk_module_template"
+  MODULE_VERSION="1.0.0"
+  
+  MODULE_DESC="${MODULE_NAME} ${MODULE_VERSION}"
+fi
+
+
+# -----------------------------------------------------------------------------
+# save the file handle for STDOUT to file handle 5 ( &5 is used in the function printMsg )
+#
+exec 5>&1
+
+
+# ----------------------------------------------------------------------------
+#
+# printMsg - print a Message to the Magisk output window even if redirection of STDOUT to the logfile is started
+# 
+# Usage: printMsg [message]
+#
+function printMsg {
+   echo "$*" >&5
+}
+
+# -----------------------------------------------------------------------------
+# change either "0 = 1" to "0 = 0" in this script or create the file /data/local/tmp/debug to enable the debug output to the log file
+#
+if [ 0 = 1  -o -r /data/local/tmp/debug ] ; then
+  LOGFILE="/data/local/tmp/${MODULE_NAME}_${SCRIPT_NAME}.log"
+
+  printMsg  "----"
+  printMsg  "Messages to STDOUT are now redirected to the log file 
+  ${LOGFILE}"
+  printMsg  "----"
+
+  exec 1>"${LOGFILE}" 2>&1
+
+  echo "The PID of this process is $$; the PPID is $PPID"
+
+  if [ -r /data/local/tmp/trace ] ; then
+    set -x
+    TRACE_MODE=${__TRUE}
+  else
+    TRACE_MODE=${__FALSE}    
+  fi
+
+  DEBUG_MODE=${__TRUE}   
+else
+  DEBUG_MODE=${__FALSE}     
+  TRACE_MODE=${__FALSE}
+fi
+
+
+# ----------------------------------------------------------------------------
+#
+# LogDebugMsg - print a Message if DEBUG_MODE is ${__TRUE}
+# 
+# Usage: LogDebugMsg [message]
+#
+function LogDebugMsg {
+  if [ ${DEBUG_MODE} = ${__TRUE} ] ; then
+    echo "$*"
+  fi
+}
+
+# ---------------------------------------------------------------------
+# ReadVolumeKeys - read the status of the volume keys
+#
+# Usage: ReadVolumeKeys [timeout] 
+#
+# Parameter:
+#        timeout - timeout in seconds to wait; the default value is 10 seconds
+#                  use "none" or "-1" for no timeout
+# returns:
+#        0 - no volume key pressed (NO_KEY_PRESSED)
+#        1 - volume up pressed (VOLUME_UP_PRESSED)
+#        2 - volume down pressed (VOLUME_DOWN_PRESSED)
+#        3 - power key pressed (POWER_PRESSED)
+#
+function ReadVolumeKeys {
+  local __FUNCTION="ReadVolumeKeys"
+
+  local THISRC=${NO_KEY_PRESSED}
+      
+  local TIMEOUT="${DEFAULT_TIMEOUT}"
+  local MESSAGE=""
+  
+  local dev=""
+  local type=""
+  local code=""
+  local value=""
+  
+  local RESULT=""
+
+  local CUR_PREFIX=""
+  
+  if [ $# -eq 1 ] ; then
+    TIMEOUT=$1
+    shift
+  fi
+
+# the variables dev, type, code, and value can not be used here because the "while" statement is running a separate session
+#
+  if [ "${TIMEOUT}"x = "none"x -o "${TIMEOUT}"x = "-1"x -o "${TIMEOUT}"x = "0"x ] ; then
+    CUR_PREFIX=""
+  else
+    CUR_PREFIX="timeout ${TIMEOUT}"
+  fi
+  
+  RESULT=$( ${CUR_PREFIX} getevent -ql | while read dev type code value; do
+    if [ "$code" = "KEY_VOLUMEUP" ] && [ "$value" = "DOWN" ]; then
+      echo ${VOLUME_UP_PRESSED}
+      break
+    elif [ "$code" = "KEY_VOLUMEDOWN" ] && [ "$value" = "DOWN" ]; then
+      echo ${VOLUME_DOWN_PRESSED}
+      break
+    elif  [ "$code" = "KEY_POWER" ] && [ "$value" = "DOWN" ]; then
+
+# activate the display again (no pin necessary here -- at least in my tests ....)
+# 
+      input keyevent KEYCODE_WAKEUP
+      echo ${POWER_PRESSED}
+      break
+    fi
+  done )
+   
+  [ "${RESULT}"x != ""x ] && THISRC="${RESULT}"
+  
+  return ${THISRC}
+}
+
+
+# -----------------------------------------------------------------------------
+# update_status_message
+#
+# function: update the description in the file module.prop
+#
+# Usage:     update_status_message
+#
+# Returns:   ${__TRUE}  - module.prop updated
+#            ${__FALSE} - module.prop not updated
+#
+function update_status_message { 
+  local THISRC=${__FALSE}
+  local CUR_MSG=""
+
+#
+# only update the fie module.prop if it exists and is writable
+#
+  if [ -w ${MODPATH}/module.prop  ] ; then
+    if [ ${DEMO_RUNNING} = ${__TRUE} ] ; then
+      CUR_MSG="The demo is running "
+    else
+      CUR_MSG="The demo is not running "
+    fi
+
+# only the root user can write to the file module.prop 
+#
+    su - -c " sed -i -e \"s/^description=.*/description=${CUR_MSG} /g\" ${MODPATH}/module.prop " && THISRC=${__TRUE}
+  fi
+  
+  return ${THISRC}
+}
+
+# -----------------------------------------------------------------------------
+# exit_program
+#
+# function: update the status in the file module.prop and exit the script
+#
+# Usage:    exit_program [script_return_code]
+#
+function exit_program {
+  local THISRC=$1
+  
+  THISRC=${THISRC:=0} 
+
+  update_status_message
+
+  echo "The script ends with RC=${THISRC}"
+  
+  exit ${THISRC}
+}
+
+
+ 
+# -----------------------------------------------------------------------------
+# Sample demo functions # ???
+#
+
+# -----------------------------------------------------------------------------
+# turn_demo_on  
+#
+# usage:    turn_demo_on
+#
+# function: turn the demo on
+#
+# Returns:  ${__TRUE}  - the demo was turned on
+#           ${__FALSE} - the demo is already turned on
+#
+function turn_demo_on {
+  local THISRC=${__FALSE}
+
+  if [ ${DEMO_RUNNING} = ${__TRUE} ] ; then
+    echo "*** The demo is already turned on  ..."
+  else
+    echo "*** Turn the demo on  ..."
+    DEMO_RUNNING=${__TRUE}
+    touch "${SEMAPHOR_FILE}" 2>/dev/null && THISRC=${__TRUE}
+    
+    NOTIFICATION_MSG="Turned the demo on at $( date )"
+    
+  fi
+
+  return ${THISRC}
+}
+
+# -----------------------------------------------------------------------------
+# turn_demo_off # ???
+#
+# usage:    turn_demo_off
+#
+# function: turn the demo off
+#
+# Returns:  ${__TRUE}  - the demo was turned off
+#           ${__FALSE} - the demo is already turned off
+#
+function turn_demo_off {
+  local THISRC=${__FALSE}
+
+  if [ ${DEMO_RUNNING} = ${__FALSE} ] ; then
+    echo "*** The demo is already turned off  ..."
+  else
+    echo "*** Turn the demo off  ..."
+    DEMO_RUNNING=${__FALSE}
+    \rm -f "${SEMAPHOR_FILE}" 2>/dev/null THISRC=${__TRUE}
+  fi
+
+  NOTIFICATION_MSG="Turned the demo off at $( date )"
+
+  return ${THISRC}
+}
+
+# -----------------------------------------------------------------------------
+# switch_demo
+#
+# usage:    switch_demo
+#
+# function: switch the demo from on to off or vice versa
+#
+# Returns:  0 - the demo is turned on now
+#           1 - the demo is turned off now
+#           2 - the demo is turned off and can not be turned on
+#           3 - the demo is turned on and can not be turned off
+#          
+function switch_demo_status {
+  local THISRC=99
+
+  echo "*** Switch the status of the demo  ..."
+
+  if [ ${DEMO_RUNNING} = ${__TRUE} ] ; then
+    THISRC=3
+    \rm -f "${SEMAPHOR_FILE}" 2>/dev/null && THISRC=1
+
+    DEMO_RUNNING=${__FALSE}
+  else
+    THISRC=2
+    touch "${SEMAPHOR_FILE}" 2>/dev/null && THISRC=0
+
+    DEMO_RUNNING=${__TRUE}
+  fi
+
+        case ${THISRC} in
+          0 ) echo "***  The demo is turned on now" ;;
+          
+          1 ) echo "*** The demo is turned off now" ;;
+          
+          2 ) echo "*** The demo is turned off and can not be turned on" ;;
+          
+          3 ) echo "*** The demo is turned on and can not be turned off" ;;
+        esac
+ 
+  return ${THISRC}
+}
+
+# -----------------------------------------------------------------------------
+# print_status
+#
+# usage:    print_status
+#
+# function: print the status of the demo
+#
+# Returns:  ${__TRUE}  - the demo is running
+#           ${__FALSE} - the demo is not running
+#
+function print_status {
+  local THISRC=${__FALSE}
+
+  if [ ${DEMO_RUNNING} = ${__FALSE} ] ; then
+    echo "*** The demo is not running"
+    THISRC=${__FALSE}
+  else
+    echo "*** The demo is running"
+    THISRC=${__TRUE}
+  fi
+  
+  return ${THISRC}
+}
+
+
+# -----------------------------------------------------------------------------
+# init_env
+#
+# usage:    init_env
+#
+# function: init or refresh the environment
+#
+# returns:  n/a
+#
+function init_env {
+
+# intit the environment for the script
+#
+  if [ -r "${SEMAPHOR_FILE}" ]  ; then
+    DEMO_RUNNING=${__TRUE}
+  else    
+    DEMO_RUNNING=${__FALSE}
+  fi
+}
+
+# -----------------------------------------------------------------------------
+# print_menu_header
+#
+# usage:    print_menu_header
+#
+# function: print the header for the menu
+#
+# returns:  n/a
+#
+
+function print_menu_header {
+
+#
+#  refresh the environment
+#
+  init_env
+
+#
+  echo
+  echo "*** Demo menu for an action.sh script"
+  echo
+  print_status
+
+}
+
+# -----------------------------------------------------------------------------
+# main function
+#
+
+# init the enviroment 
+
+  init_env
+
+# -----------------------------------------------------------------------------
+# process the parameter
+#
+
+# show the usage help if the script is called in an adb shell without any parameter 
+#
+if [ $# -eq 0 -a ${ACTION_SCRIPT_RUNNING} != ${__TRUE} ] ; then
+  set "help"
+fi  
+
+if [ $# -ne 0 ] ; then
+
+  SHOW_MENU=${__FALSE}
+  
+  THISRC=0
+
+  while [ $# -ne 0 ] ; do
+    CUR_PARAMETER="$1"
+    shift
+    
+    case ${CUR_PARAMETER} in
+    
+      help  )
+        grep "^#h#" $0 | cut -c4-
+        exit 0
+        ;;
+
+      *=* )
+        echo "Executing now \"${CUR_PARAMETER}\" ..."
+        eval ${CUR_PARAMETER}
+        if [ $? -ne 0 ] ; then
+          echo "ERROR: Error executing \"${CUR_PARAMETER}\" "
+          break
+        fi
+        ;;
+
+      start )
+        turn_demo_on
+        THISRC=$?
+        ;;
+
+      stop )
+        turn_demo_off
+        THISRC=$?
+        ;;
+
+      switch )
+        switch_demo_status
+        THISRC=$?
+        ;;
+
+      status )
+        print_status
+        THISRC=$?
+        ;;
+
+#
+# hidden parameter to use the menu if called in an adb shell -- this parameter is for debugging only
+#
+      menu )
+        SHOW_MENU=${__TRUE}
+        ;;
+
+      * )
+        echo "ERROR: Unknown parameter found: \"${CUR_PARAMETER}\" "
+        exit 5
+        ;;
+    esac
+
+  done
+
+  if [ ${SHOW_MENU} != ${__TRUE} ] ; then
+    exit_program ${THISRC}
+  fi
+fi
+ 
+ 
+# -----------------------------------------------------------------------------
+# menu entries 
+#
+
+# to show a notificaton toast in the Magisk GUI use this code
+# (the code may not work in all Android versions)
+#
+su - shell -c ' cmd notification post -S bigtext toast "The demo action script started at $( date  +%H:%M:%S ) " ' >/dev/null
+
+
+# ??? modify the menu entries
+#
+
+i=0
+
+let i=i+1 ; MENU[$i]="Turn the demo on"           # menu entry
+            MENU_ACTION[$i]="turn_demo_on"        # command to execute if this menu entry is selected
+
+let i=i+1 ; MENU[$i]="Turn the demo off"          
+            MENU_ACTION[$i]="turn_demo_off"       
+
+
+let i=i+1 ; MENU[$i]="Switch the demo status"     
+            MENU_ACTION[$i]="switch_demo_status"  
+
+
+let i=i+1 ; MENU[$i]="Refresh the menu"          
+            MENU_ACTION[$i]="echo"
+
+let i=i+1 ; MENU[$i]="Quit"
+            MENU_ACTION[$i]="exit_program"
+
+MENU_ITEMS=$i
+
+
+# the default action is start the demo if it's not running and
+# stop the demo if it is already running
+#
+[ ${DEMO_RUNNING} = ${__FALSE} ] && CUR_ACTION=1 || CUR_ACTION=2
+
+
+# the menu waits 10 seconds for a key before executing the default action
+#
+CUR_TIMEOUT=${READ_TIMEOUT:=10}
+
+# print the menu
+#
+while true ; do
+
+  print_menu_header  
+  
+  echo
+  echo "Menu"
+  echo "----"
+  echo
+  i=0 ; while [ $i -lt ${MENU_ITEMS} ] ; do
+    let i=i+1
+    [ ${CUR_ACTION} = $i ] && ENTRY_PREFIX="> " || ENTRY_PREFIX="  "
+    echo "${ENTRY_PREFIX}${MENU[$i]}"
+  done
+  echo
+  echo "Press VolumeUp or VolumeDown to select"
+  echo "Press Power to execute the item"
+  if [ ${CUR_TIMEOUT} -gt 0 ] ; then
+    echo "[ $( date ) ] "
+    echo "The current action will be executed in ${CUR_TIMEOUT} seconds"
+    echo "(Pressing VolumeUp or VolumeDown disables the timeout)"
+  fi
+  echo ">> "
+  ReadVolumeKeys ${CUR_TIMEOUT}
+  KEY_PRESSED=$?
+
+  case ${KEY_PRESSED} in
+
+    ${VOLUME_DOWN_PRESSED} )
+      CUR_TIMEOUT=-1
+      [ ${CUR_ACTION} -lt ${MENU_ITEMS} ] && let CUR_ACTION=CUR_ACTION+1 || CUR_ACTION=1
+      ;;
+    
+    ${VOLUME_UP_PRESSED} )
+      CUR_TIMEOUT=-1
+      [ ${CUR_ACTION} -gt 1 ] && let CUR_ACTION=CUR_ACTION-1 || CUR_ACTION=${MENU_ITEMS}
+      ;;
+  
+    ${POWER_PRESSED} | ${NO_KEY_PRESSED} )
+
+      if [ ${KEY_PRESSED} = ${NO_KEY_PRESSED} ] ; then
+        echo "No key pressed -- now executing \"${MENU[${CUR_ACTION}]}\" ..."
+      else
+        CUR_TIMEOUT=-1
+      fi
+
+      echo
+      echo " ---------------------------------------------------------  "
+      eval ${MENU_ACTION[${CUR_ACTION}]}
+      echo
+      echo " ---------------------------------------------------------  "
+
+# exit the menu if no key was pressed
+#      
+      if [ ${KEY_PRESSED} = ${NO_KEY_PRESSED} ] ; then
+#
+# show a toast message
+#        
+        if [ "${NOTIFICATION_MSG}"x != ""x ] ; then
+          su - shell -c " cmd notification post -S bigtext toast \"${NOTIFICATION_MSG}\" " >/dev/null
+        fi
+        exit_program
+      fi
+     ;;
+
+  esac
+done
+        
+
+# -----------------------------------------------------------------------------
+# this code should never be executed ...
+#
+
+exit_program
+
+# -----------------------------------------------------------------------------
+

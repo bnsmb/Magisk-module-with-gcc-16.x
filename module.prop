@@ -1,0 +1,6 @@
+id=gcc16
+name=gcc16 for Android
+version=16.2.1_20261006-v1.0.0
+versionCode=3
+author=Bernd.Schemmer@gmx.de
+description=A toolchain with the gcc 16.x and the Android NDK for Android

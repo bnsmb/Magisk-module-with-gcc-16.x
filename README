@@ -1,0 +1,183 @@
+This Magisk module contains a toolchain with the gcc 16.x and the sysroot from the Android NDK r30 for arm64 CPUs
+
+Also included are the binaries pkg-config, pkgconf, and make.
+
+The gcc toolchain was copied from this GitHub repository:
+
+https://github.com/AmanoTeam/android-gcc-cross
+
+
+The version of the gcc and the g++ in the Magisk Module is:
+
+ASUS_I006D:/data/local/tmp # gcc --version
+aarch64-unknown-linux-android-gcc (GCC) 16.2.1 20261006
+Copyright (C) 2026 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.  There is NO
+warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
+ASUS_I006D:/data/local/tmp # 
+
+ASUS_I006D:/system/bin # g++ --version
+aarch64-unknown-linux-android-g++ (GCC) 16.2.1 20261006
+Copyright (C) 2026 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.  There is NO
+warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
+ASUS_I006D:/system/bin # 
+
+
+The gcc toolchain is installed in the directory
+
+/system/lib/android-gcc-cross/
+
+Symbolic links to the executables in the gcc toolchain are in the directory
+
+/system/bin/gcc-toolchain
+
+Symbolic links for cc, c++, gcc, g++ are installed in the directory /system/bin.
+
+cc, c++, gcc, and g++ are wrapper scripts for the real compiler.
+
+The wrapper scripts use the value of the environment variable API to select the compiler to use. The default value for the environment variable API in the scripts is 31.
+(API 31 is Android 12 -- see https://source.android.com/docs/setup/reference/build-numbers)
+
+Note: The original wrapper scripts from the gcc toolchain use an API version hardcoded in the scripts.
+
+
+The sysroot from the Android NDK is in the directory
+
+/system/lib/android-gcc-cross
+
+
+The additional tools are installed in the directory /system/usr/bin with symbolic links in /system/bin.
+
+The version of the additional tools are:
+
+ASUS_I006D:/ $ make --version
+GNU Make 4.1.90
+Built for aarch64-unknown-linux-gnu
+Copyright (C) 1988-2014 Free Software Foundation, Inc.
+License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+ASUS_I006D:/ $     
+
+ASUS_I006D:/ $ pkg-config --version           
+0.29
+ASUS_I006D:/ $      
+
+ASUS_I006D:/ $ pkgconf --version
+2.3.0
+ASUS_I006D:/ $
+
+
+
+Sample source files are in the directory /system/usr/share/gcc ;
+
+ASUS_I006D:/system/usr/share/gcc # ls -l
+total 12
+-rw-r--r-- 1 root root  586 2026-10-06 21:11 helloworld_in_assembler.s
+-rw-r--r-- 1 root root 1639 2026-10-06 21:11 helloworld_in_c++.cpp
+-rw-r--r-- 1 root root 1343 2026-10-06 21:11 helloworld_in_c.c
+ASUS_I006D:/system/usr/share/gcc # 
+
+
+To test the compiler execute these commands:
+
+
+# compile a C program
+#
+gcc -o /data/local/tmp/helloworld_in_c /system/usr/share/gcc/helloworld_in_c.c && /data/local/tmp/helloworld_in_c 
+
+# compile a C++ program
+#
+g++ -o /data/local/tmp/helloworld_in_c++  /system/usr/share/gcc/helloworld_in_c++.cpp  && LD_LIBRARY_PATH=/system/lib64:/system/lib/android-gcc-cross/aarch64-unknown-linux-android/lib /data/local/tmp/helloworld_in_c++   
+
+# compile a C++ program using static C++ libraries
+#
+g++ -static-libstdc++ -o /data/local/tmp/helloworld_in_c++_general  /system/usr/share/gcc/helloworld_in_c++.cpp  && /data/local/tmp/helloworld_in_c++_general
+
+# compile an assembler program
+#
+gcc -nostdlib -static -Wl,--entry=_start -o /data/local/tmp/helloworld_in_assembler /system/usr/share/gcc/helloworld_in_assembler.s && /data/local/tmp/helloworld_in_assembler
+
+
+To compile a file with gcc or g++ using CMake, use one of the CMake toolchain files from the /system/lib/android-gcc-cross/usr/local/share/android-gcc-cross directory.
+
+Example:
+
+API=31 cmake \
+  -DCMAKE_TOOLCHAIN_FILE=/system/lib/android-gcc-cross/usr/local/share/android-gcc-cross/cmake/aarch64-unknown-linux-android${API}.cmake \
+  -G Ninja ..
+
+
+
+The script 
+
+/system/bin/init_gcc_env
+
+can be used to init the environment for the gcc toolchain to use the other binaries from the gcc toolchain without fully qualified name.
+
+Currently the script only extends the PATH variable and the prompt. To use it execute the command
+
+source /system/bin/init_gcc_env
+
+
+
+Internals
+
+
+To create the Magisk Module, the gcc toolchain was installed in /system using the installation script for Termux from the repository with the gcc toolchain with a few modifications.
+
+The shell script used to download the script from the repository,  make these modifications, and install the gcc using the modified script  -- install_gcc.sh -- is in the directory ./source in the Magisk module.
+
+
+To make /system writable, an overlay mount for /system was used. The overlay mount was created with the script
+
+http://bnsmb.de/files/public/Android/create_overlay_mount.sh
+
+
+The script create_overlay_mount.sh is also available in the GitHub repository with scripts for Android:
+
+https://github.com/bnsmb/scripts-for-Android/blob/main/scripts/create_overlay_mount.sh
+
+(see http://bnsmb.de/android/Documentation_for_the_script_create_overlay_mount.sh.html for the documentation for the script)
+
+Please note that the tar archive with the gcc toolchain in the repository is compressed with xz. Therefore, a xz binary is required to unpack that file.
+xz ist not installed by default in Android; an xz binary for arm64 CPUs can be downloaded here:  http://bnsmb.de/files/public/Android/binaries_for_arm64/xz
+The xz binary is also in the GitHub repository with binaries for Android on arm64 CPUs: https://github.com/bnsmb/binaries-for-Android
+
+
+
+
+Trouble Shooting
+
+
+The error message
+
+shell-init: error retrieving current directory: getcwd: cannot access parent directories: Math result not representable
+
+is caused by a bug in the bash binary on most Android versions.  In most cases, this message can be ignored.
+
+The scripts from the gcc toolchain must be executed by bash -- the default shell in Android, /system/bin/sh, does not support all required features used in these scripts.
+
+To avoid the error message, install the bash binary from this Magisk Module:
+
+http://bnsmb.de/files/public/Android/MagiskModules/bash_5.2.37-v1.1.0.zip
+
+The bash binary is also available for download here:
+
+http://bnsmb.de/files/public/Android/binaries_for_arm64/bash-5.2.37
+
+
+Credits
+
+Many thanks to Amano LLC (https://amanoteam.com/) for developing the gcc toolchain for Android (https://github.com/AmanoTeam/android-gcc-cross)
+
+
+
+History
+
+09.10.2026 16.2.1_20261006-v1.0.0 /bs
+  initial release
+
