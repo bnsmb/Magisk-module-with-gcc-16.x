@@ -82,7 +82,7 @@ To install the gcc toolchain on a phone or tablet without **Termux** the script
 
 [gcc_install.sh](https://github.com/bnsmb/Magisk-module-with-gcc-16.x/blob/main/source/install_gcc.sh)
 
-from this repository can be used.
+from this repository can be used. **gcc_install.sh** downloads and uses the installation script from the gcc repository with a few modifications to install the gcc toolchain.
 
 ----
 
