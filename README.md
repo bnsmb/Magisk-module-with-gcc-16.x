@@ -72,10 +72,23 @@ and in this post on XDA:
 
 [https://xdaforums.com/t/module-a-magisk-module-with-a-gcc-16-x-toolchain.4804271/](https://xdaforums.com/t/module-a-magisk-module-with-a-gcc-16-x-toolchain.4804271/)
 
+----
 
+**Notes**
+
+As of **08.10.2026** the repository with the gcc toolchain ([https://github.com/AmanoTeam/android-gcc-cross](https://github.com/AmanoTeam/android-gcc-cross)) only contains a [script](https://github.com/AmanoTeam/android-gcc-cross#termux) to install the gcc toolchain in a [Termux](https://termux.dev/en/) environment on a phone or tablet.
+
+To install the gcc toolchain on a phone or tablet without **Termux** the script
+
+[gcc_install.sh](https://github.com/bnsmb/Magisk-module-with-gcc-16.x/blob/main/source/install_gcc.sh)
+
+from this repository can be used.
+
+----
 
 **Credits**
 
 Many thanks to Amano LLC ([https://amanoteam.com/](https://amanoteam.com/)) for developing the gcc toolchain for Android ([https://github.com/AmanoTeam/android-gcc-cross](https://github.com/AmanoTeam/android-gcc-cross))
 
 
+----
