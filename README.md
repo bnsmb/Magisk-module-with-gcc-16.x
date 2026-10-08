@@ -54,7 +54,7 @@ ASUS_I006D:/ $
 
 To create the Magisk Module, clone the repository
 ```
-git clone git@github.com:bnsmb/Magisk-module-with-gcc-16.x.git
+git clone https://github.com/bnsmb/Magisk-module-with-gcc-16.x.git
 ```
 and execute the script **create_zip.sh**:
 ```
